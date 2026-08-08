@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Raster Image Uploader & Optimizer - Upload files!</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --bg: #f9fafb;
+      --card-bg: #ffffff;
+      --border: #e5e7eb;
+      --text: #1f2937;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .uploader-card {
+      background: var(--card-bg);
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      width: 100%;
+      max-width: 450px;
+      text-align: center;
+    }
+
+    h2 {
+      margin-top: 0;
+      font-size: 1.5rem;
+      margin-bottom: 8px;
+    }
+
+    p {
+      color: #6b7280;
+      font-size: 0.875rem;
+      margin-bottom: 24px;
+    }
+
+    /* Hide the default ugly file input */
+    .file-input-hidden {
+      display: none;
+    }
+
+    .upload-label {
+      display: inline-block;
+      background-color: var(--primary);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .upload-label:hover {
+      background-color: var(--primary-hover);
+    }
+
+    .preview-container {
+      margin-top: 24px;
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 150px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.2s, border-color 0.2s;
+    }
+
+    /* Visual feedback when hovering dragged item */
+    .preview-container.drag-over {
+      background-color: #f0f2ff;
+      border-color: var(--primary);
+    }
+
+    #image-preview {
+      max-width: 100%;
+      max-height: 250px;
+      border-radius: 6px;
+      display: none;
+    }
+
+    .placeholder-text {
+      color: #9ca3af;
+      font-size: 0.875rem;
+    }
+
+    .meta-info {
+      margin-top: 16px;
+      font-size: 0.75rem;
+      color: #4b5563;
+      text-align: left;
+      width: 100%;
+      background: #f3f4f6;
+      padding: 10px;
+      border-radius: 6px;
+      box-sizing: border-box;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="uploader-card">
+    <h2>Raster Image Uploader</h2>
+    <p>Upload a JPEG or PNG to auto-optimize it to WebP format.</p>
+
+    <!-- File Input -->
+    <input type="file" id="raster-input" class="file-input-hidden" accept="image/jpeg, image/png">
+    <label for="raster-input" class="upload-label">Choose Raster Image</label>
+
+    <!-- UI Preview Box / Drop Zone -->
+    <div class="preview-container" id="drop-zone">
+      <span id="placeholder" class="placeholder-text">No image selected or drop file here</span>
+      <img id="image-preview" alt="Optimized preview">
+    </div>
+
+    <!-- Optimization Info Log -->
+    <div id="meta-info" class="meta-info">
+      <strong>Optimization Log:</strong>
+      <div id="original-size"></div>
+      <div id="optimized-size"></div>
+      <div id="dimensions"></div>
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('raster-input');
+    const dropZone = document.getElementById('drop-zone');
+    const imagePreview = document.getElementById('image-preview');
+    const placeholder = document.getElementById('placeholder');
+    const metaInfo = document.getElementById('meta-info');
+    
+    const originalSizeEl = document.getElementById('original-size');
+    const optimizedSizeEl = document.getElementById('optimized-size');
+    const dimensionsEl = document.getElementById('dimensions');
+
+    // Centralized function to handle optimization for both inputs
+    function processFile(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+
+      // Log original raw file size
+      const origSizeKB = (file.size / 1024).toFixed(2);
+      originalSizeEl.textContent = `Original Size: ${origSizeKB} KB (${file.type})`;
+
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      
+      reader.onload = (e) => {
+        const img = new Image();
+        img.src = e.target.result;
+        
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          // Downscale rule: Cap width at 800px while maintaining aspect ratio
+          const MAX_WIDTH = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > MAX_WIDTH) {
+            height = Math.round((MAX_WIDTH / width) * height);
+            width = MAX_WIDTH;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          // Resample and draw pixel grid into canvas
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Compress the raster data to WebP format at 80% quality
+          canvas.toBlob((blob) => {
+            if (!blob) return;
+
+            // Generate an in-memory object URL for the UI display
+            const optimizedUrl = URL.createObjectURL(blob);
+            
+            // Update UI elements
+            placeholder.style.display = 'none';
+            imagePreview.src = optimizedUrl;
+            imagePreview.style.display = 'block';
+            
+            // Print compression analytics
+            const optSizeKB = (blob.size / 1024).toFixed(2);
+            optimizedSizeEl.textContent = `Optimized Size: ${optSizeKB} KB (image/webp)`;
+            dimensionsEl.textContent = `Dimensions: ${width}px × ${height}px`;
+            metaInfo.style.display = 'block';
+          }, 'image/webp', 0.8);
+        };
+      };
+    }
+
+    // Standard File input selection event
+    fileInput.addEventListener('change', (event) => {
+      processFile(event.target.files[0]);
+    });
+
+    // Prevent browser default file open behavior
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, (e) => e.preventDefault(), false);
+    });
+
+    // Highlight drop zone when item enters it
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+    });
+
+    // Remove highlight when item leaves drop zone
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
+    });
+
+    // Handle dropped file
+    dropZone.addEventListener('drop', (event) => {
+      const dt = event.dataTransfer;
+      const file = dt.files[0];
+      processFile(file);
+    });
+
+    window.addEventListener('beforeunload', (event) => {
+        event.preventDefault();
+        event.returnValue = '';
+    });
+  </script>
+
+</body>
+</html>
+
